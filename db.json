@@ -1,0 +1,280 @@
+{
+  "districts": [
+    {
+      "id": 1,
+      "name": "武昌区",
+      "avgPrice": 28500,
+      "premium": 38,
+      "education": 92,
+      "traffic": 85,
+      "medical": 80,
+      "commerce": 88,
+      "environment": 72
+    },
+    {
+      "id": 2,
+      "name": "江汉区",
+      "avgPrice": 32000,
+      "premium": 45,
+      "education": 88,
+      "traffic": 92,
+      "medical": 88,
+      "commerce": 95,
+      "environment": 65
+    },
+    {
+      "id": 3,
+      "name": "洪山区",
+      "avgPrice": 22000,
+      "premium": 28,
+      "education": 78,
+      "traffic": 75,
+      "medical": 72,
+      "commerce": 80,
+      "environment": 85
+    },
+    {
+      "id": 4,
+      "name": "硚口区",
+      "avgPrice": 19500,
+      "premium": 18,
+      "education": 65,
+      "traffic": 78,
+      "medical": 70,
+      "commerce": 75,
+      "environment": 68
+    },
+    {
+      "id": 5,
+      "name": "青山区",
+      "avgPrice": 16000,
+      "premium": 12,
+      "education": 58,
+      "traffic": 68,
+      "medical": 65,
+      "commerce": 62,
+      "environment": 78
+    },
+    {
+      "id": 6,
+      "name": "江岸区",
+      "avgPrice": 26000,
+      "premium": 32,
+      "education": 85,
+      "traffic": 88,
+      "medical": 82,
+      "commerce": 90,
+      "environment": 70
+    }
+  ],
+  "communities": [
+    {
+      "id": 1,
+      "name": "珞珈山庄",
+      "district": "武昌区",
+      "price": 35200,
+      "premium": 52,
+      "school": "武汉外国语学校",
+      "schoolLevel": "重点",
+      "distance": 0.3,
+      "subway": 0.5
+    },
+    {
+      "id": 2,
+      "name": "东湖花园",
+      "district": "武昌区",
+      "price": 28600,
+      "premium": 28,
+      "school": "武昌实验小学",
+      "schoolLevel": "重点",
+      "distance": 0.6,
+      "subway": 1.2
+    },
+    {
+      "id": 3,
+      "name": "汉口花园",
+      "district": "江汉区",
+      "price": 42000,
+      "premium": 58,
+      "school": "江汉一小",
+      "schoolLevel": "重点",
+      "distance": 0.2,
+      "subway": 0.3
+    },
+    {
+      "id": 4,
+      "name": "南湖新城",
+      "district": "洪山区",
+      "price": 19800,
+      "premium": 15,
+      "school": "南湖小学",
+      "schoolLevel": "普通",
+      "distance": 1.2,
+      "subway": 2.0
+    },
+    {
+      "id": 5,
+      "name": "光谷壹号",
+      "district": "洪山区",
+      "price": 26500,
+      "premium": 35,
+      "school": "武汉小学光谷校区",
+      "schoolLevel": "重点",
+      "distance": 0.5,
+      "subway": 0.8
+    },
+    {
+      "id": 6,
+      "name": "解放公园路",
+      "district": "江岸区",
+      "price": 31000,
+      "premium": 42,
+      "school": "江岸实验小学",
+      "schoolLevel": "重点",
+      "distance": 0.4,
+      "subway": 0.6
+    },
+    {
+      "id": 7,
+      "name": "建设大道小区",
+      "district": "江汉区",
+      "price": 24000,
+      "premium": 20,
+      "school": "建设小学",
+      "schoolLevel": "普通",
+      "distance": 0.9,
+      "subway": 1.1
+    },
+    {
+      "id": 8,
+      "name": "青山红钢城",
+      "district": "青山区",
+      "price": 14500,
+      "premium": 8,
+      "school": "红钢城小学",
+      "schoolLevel": "普通",
+      "distance": 1.5,
+      "subway": 2.3
+    },
+    {
+      "id": 9,
+      "name": "关山学府城",
+      "district": "洪山区",
+      "price": 27800,
+      "premium": 40,
+      "school": "华中师大一附中",
+      "schoolLevel": "重点",
+      "distance": 0.7,
+      "subway": 0.9
+    },
+    {
+      "id": 10,
+      "name": "后湖新城",
+      "district": "江岸区",
+      "price": 26800,
+      "premium": 26,
+      "school": "后湖小学",
+      "schoolLevel": "普通",
+      "distance": 1.1,
+      "subway": 0.7
+    },
+    {
+      "id": 11,
+      "name": "中山公园里",
+      "district": "江汉区",
+      "price": 33500,
+      "premium": 48,
+      "school": "武汉实验小学",
+      "schoolLevel": "重点",
+      "distance": 0.4,
+      "subway": 0.2
+    },
+    {
+      "id": 12,
+      "name": "汉阳大道里",
+      "district": "硚口区",
+      "price": 20500,
+      "premium": 16,
+      "school": "硚口实验小学",
+      "schoolLevel": "普通",
+      "distance": 1.3,
+      "subway": 1.4
+    }
+  ],
+  "priceTrend": [
+    {
+      "id": 1,
+      "year": "2019",
+      "school": 22000,
+      "nonSchool": 16500
+    },
+    {
+      "id": 2,
+      "year": "2020",
+      "school": 24500,
+      "nonSchool": 17200
+    },
+    {
+      "id": 3,
+      "year": "2021",
+      "school": 29000,
+      "nonSchool": 19000
+    },
+    {
+      "id": 4,
+      "year": "2022",
+      "school": 31500,
+      "nonSchool": 19800
+    },
+    {
+      "id": 5,
+      "year": "2023",
+      "school": 34000,
+      "nonSchool": 20500
+    },
+    {
+      "id": 6,
+      "year": "2024",
+      "school": 36500,
+      "nonSchool": 21200
+    }
+  ],
+  "featureImportance": [
+    {
+      "id": 1,
+      "feature": "地铁距离",
+      "importance": 0.2498,
+      "color": "#2563eb"
+    },
+    {
+      "id": 2,
+      "feature": "建筑年代",
+      "importance": 0.247,
+      "color": "#0891b2"
+    },
+    {
+      "id": 3,
+      "feature": "行政区位",
+      "importance": 0.2282,
+      "color": "#7c3aed"
+    },
+    {
+      "id": 4,
+      "feature": "学校距离",
+      "importance": 0.1332,
+      "color": "#16a34a"
+    },
+    {
+      "id": 5,
+      "feature": "学区等级",
+      "importance": 0.0907,
+      "color": "#f59e0b"
+    },
+    {
+      "id": 6,
+      "feature": "是否学区房",
+      "importance": 0.0348,
+      "color": "#db2777"
+    }
+  ]
+}

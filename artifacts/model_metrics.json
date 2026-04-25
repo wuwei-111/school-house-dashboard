@@ -1,0 +1,13 @@
+{
+  "best_model": "random_forest",
+  "metrics": {
+    "linear_regression": {
+      "r2": -20.567562230865207,
+      "rmse": 8010.959968433317
+    },
+    "random_forest": {
+      "r2": -1.303854319143639,
+      "rmse": 2618.252569657579
+    }
+  }
+}
