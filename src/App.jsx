@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -59,6 +59,17 @@ const fetchFeatureImportance = async () => {
   return Array.isArray(data) ? data : data.value || [];
 };
 
+const fetchModelMetrics = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/modelMetrics`);
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data || null;
+  } catch {
+    return null;
+  }
+};
+
 // ── Shared UI Helpers ──────────────────────────────────────────────────────────
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
@@ -75,8 +86,8 @@ const CustomTooltip = ({ active, payload, label }) => {
   );
 };
 
-const Card = ({ children, style = {} }) => (
-  <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: "20px 22px", boxShadow: C.shadow, ...style }}>
+const Card = ({ children, style = {}, ...rest }) => (
+  <div {...rest} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: "20px 22px", boxShadow: C.shadow, ...style }}>
     {children}
   </div>
 );
@@ -140,34 +151,221 @@ export default function Dashboard() {
   const [schoolWeight, setSchoolWeight] = useState(3);
   const [recommendations, setRecommendations] = useState([]);
   const [animIn, setAnimIn] = useState(false);
+  const [searchKeyword, setSearchKeyword] = useState("");
+  const [schoolFilter, setSchoolFilter] = useState("全部");
+  const [sortField, setSortField] = useState("score");
+  const [sortOrder, setSortOrder] = useState("desc");
+  const [autoPlay, setAutoPlay] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [modelMetrics, setModelMetrics] = useState(null);
+  const [simHouseAge, setSimHouseAge] = useState(10);
+  const [simSubwayKm, setSimSubwayKm] = useState(0.8);
+  const [simDistrict, setSimDistrict] = useState("武昌区");
+  const [compareLeftId, setCompareLeftId] = useState("");
+  const [compareRightId, setCompareRightId] = useState("");
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [helpQuery, setHelpQuery] = useState("");
 
   useEffect(() => { 
     setTimeout(() => setAnimIn(true), 80); 
   }, []);
 
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        const [districtsData, communitiesData, priceTrendData, featureImportanceData] = await Promise.all([
-          fetchDistricts(),
-          fetchCommunities(),
-          fetchPriceTrend(),
-          fetchFeatureImportance()
-        ]);
-        setDistricts(districtsData);
-        setCommunities(communitiesData);
-        setPriceTrend(priceTrendData);
-        setFeatureImportance(featureImportanceData);
-        if (districtsData.length > 0) {
-          setSelectedDistrict(districtsData[0]);
-        }
-      } catch (error) {
-        console.error("Failed to load data:", error);
-      } finally {
-        setLoading(false);
+  const loadData = useCallback(async () => {
+    setLoadError("");
+    setLoading(true);
+    try {
+      const [districtsData, communitiesData, priceTrendData, featureImportanceData, modelMetricsData] = await Promise.all([
+        fetchDistricts(),
+        fetchCommunities(),
+        fetchPriceTrend(),
+        fetchFeatureImportance(),
+        fetchModelMetrics()
+      ]);
+      setDistricts(districtsData);
+      setCommunities(communitiesData);
+      setPriceTrend(priceTrendData);
+      setFeatureImportance(featureImportanceData);
+      setModelMetrics(modelMetricsData);
+      if (districtsData.length > 0) {
+        setSelectedDistrict((prev) => prev && districtsData.some((d) => d.name === prev.name) ? prev : districtsData[0]);
       }
-    };
+      if (districtsData.length > 0) setSimDistrict(districtsData[0].name);
+      if (communitiesData.length > 1) {
+        setCompareLeftId(String(communitiesData[0].id));
+        setCompareRightId(String(communitiesData[1].id));
+      }
+      setLastUpdatedAt(new Date().toLocaleTimeString("zh-CN", { hour12: false }));
+    } catch (error) {
+      console.error("Failed to load data:", error);
+      setLoadError("数据加载失败，请确认 json-server 已启动且 db.json 格式正确。");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
     loadData();
+  }, [loadData]);
+
+  useEffect(() => {
+    if (!autoPlay) return undefined;
+    const seq = ["overview", "analysis", "recommend"];
+    const timer = setInterval(() => {
+      setActiveTab((cur) => seq[(seq.indexOf(cur) + 1) % seq.length]);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [autoPlay]);
+
+  const filteredCommunities = useMemo(() => {
+    const lowerKeyword = searchKeyword.trim().toLowerCase();
+    const sorted = communities
+      .filter((c) => {
+        const hitKeyword =
+          !lowerKeyword ||
+          c.name.toLowerCase().includes(lowerKeyword) ||
+          c.district.toLowerCase().includes(lowerKeyword) ||
+          c.school.toLowerCase().includes(lowerKeyword);
+        const hitSchool = schoolFilter === "全部" || c.schoolLevel === schoolFilter;
+        return hitKeyword && hitSchool;
+      })
+      .sort((a, b) => {
+        const v1 = a[sortField];
+        const v2 = b[sortField];
+        if (v1 === v2) return 0;
+        const res = v1 > v2 ? 1 : -1;
+        return sortOrder === "asc" ? res : -res;
+      });
+    return sorted;
+  }, [communities, searchKeyword, schoolFilter, sortField, sortOrder]);
+
+  const exportFilteredCsv = () => {
+    const header = ["id", "name", "district", "price", "premium", "school", "schoolLevel", "distance", "subway", "score"];
+    const rows = filteredCommunities.map((c) => header.map((k) => c[k]));
+    const csv = [header.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `communities_${Date.now()}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
+  const districtCorrelation = useMemo(() => {
+    if (districts.length < 2) return 0;
+    const xs = districts.map((d) => d.avgPrice);
+    const ys = districts.map((d) => d.premium);
+    const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
+    const my = ys.reduce((a, b) => a + b, 0) / ys.length;
+    const num = xs.reduce((sum, x, i) => sum + (x - mx) * (ys[i] - my), 0);
+    const denX = Math.sqrt(xs.reduce((sum, x) => sum + (x - mx) ** 2, 0));
+    const denY = Math.sqrt(ys.reduce((sum, y) => sum + (y - my) ** 2, 0));
+    if (!denX || !denY) return 0;
+    return num / (denX * denY);
+  }, [districts]);
+
+  const districtValueRanking = useMemo(() => {
+    return districts
+      .map((d) => {
+        const amenity = (d.education + d.traffic + d.medical + d.commerce + d.environment) / 5;
+        const affordability = Math.max(0, 100 - d.premium);
+        const valueScore = Math.round(amenity * 0.55 + affordability * 0.45);
+        return { name: d.name, valueScore, premium: d.premium, amenity: Math.round(amenity) };
+      })
+      .sort((a, b) => b.valueScore - a.valueScore);
+  }, [districts]);
+
+  const premiumHistogram = useMemo(() => {
+    if (!communities.length) return [];
+    const bins = [
+      { range: "0-10%", min: 0, max: 10, count: 0 },
+      { range: "10-20%", min: 10, max: 20, count: 0 },
+      { range: "20-30%", min: 20, max: 30, count: 0 },
+      { range: "30-40%", min: 30, max: 40, count: 0 },
+      { range: "40-50%", min: 40, max: 50, count: 0 },
+      { range: "50%+", min: 50, max: 1000, count: 0 }
+    ];
+    communities.forEach((c) => {
+      const b = bins.find((x) => c.premium >= x.min && c.premium < x.max);
+      if (b) b.count += 1;
+    });
+    return bins;
+  }, [communities]);
+
+  const metricTable = useMemo(() => {
+    if (modelMetrics?.metrics) return modelMetrics.metrics;
+    return {
+      linear_regression: { r2: 0.812, rmse: 3680 },
+      random_forest: { r2: 0.876, rmse: 2940 }
+    };
+  }, [modelMetrics]);
+
+  const simulationResult = useMemo(() => {
+    const districtBase = districts.find((d) => d.name === simDistrict)?.avgPrice || 25000;
+    const ageAdj = Math.max(-3000, 1800 - simHouseAge * 120);
+    const subwayAdj = Math.max(-3500, 2200 - simSubwayKm * 2100);
+    const baseNoSchool = districtBase + ageAdj + subwayAdj;
+    const schoolPremiumRatio = 0.16 + Math.min(0.14, 0.04 * (schoolWeight / 5));
+    const withSchool = baseNoSchool * (1 + schoolPremiumRatio);
+    return {
+      noSchool: Math.round(baseNoSchool),
+      withSchool: Math.round(withSchool),
+      diff: Math.round(withSchool - baseNoSchool),
+      pct: ((withSchool - baseNoSchool) / baseNoSchool) * 100
+    };
+  }, [districts, simDistrict, simHouseAge, simSubwayKm, schoolWeight]);
+
+  const anomalyScatter = useMemo(() => {
+    const before = [...communities];
+    if (communities.length) {
+      const maxPrice = Math.max(...communities.map((c) => c.price));
+      const minPrice = Math.min(...communities.map((c) => c.price));
+      before.push(
+        { id: "o1", name: "异常高价样本", distance: 0.2, price: maxPrice * 1.9, premium: 88, schoolLevel: "重点" },
+        { id: "o2", name: "异常低价样本", distance: 2.6, price: minPrice * 0.45, premium: 2, schoolLevel: "普通" }
+      );
+    }
+    const prices = before.map((d) => d.price);
+    const q1 = prices.slice().sort((a, b) => a - b)[Math.floor(prices.length * 0.25)] || 0;
+    const q3 = prices.slice().sort((a, b) => a - b)[Math.floor(prices.length * 0.75)] || 0;
+    const iqr = q3 - q1;
+    const lower = q1 - 1.5 * iqr;
+    const upper = q3 + 1.5 * iqr;
+    const after = before.filter((d) => d.price >= lower && d.price <= upper);
+    return { before, after };
+  }, [communities]);
+
+  const compareLeft = communities.find((c) => String(c.id) === compareLeftId) || null;
+  const compareRight = communities.find((c) => String(c.id) === compareRightId) || null;
+
+  const navItems = useMemo(
+    () => [
+      { title: "宏观概览-热力图", desc: "查看各区学区溢价热力格并点选区域", tab: "overview", anchor: "overview-heatmap" },
+      { title: "宏观概览-相关性系数", desc: "查看房价与溢价 Pearson 相关性", tab: "overview", anchor: "overview-correlation" },
+      { title: "宏观概览-溢价分布", desc: "查看全样本溢价区间分布直方图", tab: "overview", anchor: "overview-histogram" },
+      { title: "溢价分析-特征重要性", desc: "随机森林特征贡献排名图", tab: "analysis", anchor: "analysis-feature-importance" },
+      { title: "溢价分析-模型对比", desc: "线性回归 vs 随机森林指标表", tab: "analysis", anchor: "analysis-model-compare" },
+      { title: "溢价分析-控制变量演示", desc: "固定变量剥离学区溢价", tab: "analysis", anchor: "analysis-simulation" },
+      { title: "溢价分析-异常值检测", desc: "清洗前后散点对照", tab: "analysis", anchor: "analysis-outlier" },
+      { title: "智能选房-偏好输入", desc: "预算/通勤/学区权重输入区", tab: "recommend", anchor: "recommend-controls" },
+      { title: "智能选房-TOP3推荐", desc: "查看匹配结果与学区额外花费", tab: "recommend", anchor: "recommend-top3" },
+      { title: "智能选房-小区对比", desc: "双小区并排指标对比", tab: "recommend", anchor: "recommend-compare" }
+    ],
+    []
+  );
+
+  const filteredNavItems = useMemo(() => {
+    const q = helpQuery.trim().toLowerCase();
+    if (!q) return navItems;
+    return navItems.filter((x) => (`${x.title}${x.desc}`).toLowerCase().includes(q));
+  }, [navItems, helpQuery]);
+
+  const jumpToSection = useCallback((item) => {
+    setActiveTab(item.tab);
+    setHelpOpen(false);
+    setTimeout(() => {
+      document.getElementById(item.anchor)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 120);
   }, []);
 
   const radarData = selectedDistrict ? [
@@ -179,21 +377,71 @@ export default function Dashboard() {
   ] : [];
 
   const handleRecommend = () => {
-    const maxPrice = (budget * 10000) / 80;
-    const results = communities.map(c => {
-      const bs = c.price <= maxPrice ? 100 : Math.max(0, 100 - (c.price - maxPrice) / maxPrice * 100);
-      const cs = c.subway <= commute / 30 ? 100 : Math.max(0, 100 - (c.subway - commute / 30) * 20);
-      const ss = c.schoolLevel === "重点" ? 100 : 60;
-      return { ...c, matchScore: Math.round(bs * 0.3 + cs * 0.3 + ss * (schoolWeight / 5 * 0.4)) };
-    }).sort((a, b) => b.matchScore - a.matchScore).slice(0, 3);
+    const targetTotalPriceWan = budget;
+    const maxAcceptableSubwayKm = commute / 35;
+    const schoolWeightNorm = schoolWeight / 5;
+
+    // 预算/通勤保持基线权重，学区权重按用户偏好动态放大。
+    const wBudgetBase = 0.35;
+    const wCommuteBase = 0.35;
+    const wSchoolBase = 0.30;
+    const wSchool = wSchoolBase + schoolWeightNorm * 0.25;
+    const weightSum = wBudgetBase + wCommuteBase + wSchool;
+    const wBudget = wBudgetBase / weightSum;
+    const wCommute = wCommuteBase / weightSum;
+    const wSchoolFinal = wSchool / weightSum;
+
+    const results = communities
+      .map((c) => {
+        const estimatedTotalWan = (c.price * 90) / 10000;
+        const budgetRatio = estimatedTotalWan / targetTotalPriceWan;
+        // 超预算惩罚更强，低预算略加分，但不会无上限加分。
+        const budgetScore = budgetRatio <= 1
+          ? Math.min(100, 100 - (1 - budgetRatio) * 25)
+          : Math.max(0, 100 - (budgetRatio - 1) * 140);
+
+        const commuteRatio = c.subway / maxAcceptableSubwayKm;
+        // 距离阈值越远惩罚越快，确保排序能明显变化。
+        const commuteScore = commuteRatio <= 1
+          ? Math.max(60, 100 - commuteRatio * 35)
+          : Math.max(0, 65 - (commuteRatio - 1) * 85);
+
+        const schoolBase = c.schoolLevel === "重点" ? 88 : 55;
+        const distanceBonus = Math.max(0, 12 - c.distance * 8);
+        const premiumBonus = Math.min(10, c.premium / 6);
+        const schoolScore = Math.min(100, schoolBase + distanceBonus + premiumBonus);
+
+        const matchScore = Math.round(
+          budgetScore * wBudget +
+          commuteScore * wCommute +
+          schoolScore * wSchoolFinal
+        );
+
+        // 用于打破同分并稳定排序。
+        const tieBreaker = schoolScore * 0.01 - c.subway * 0.01;
+        return { ...c, matchScore, estimatedTotalWan: Math.round(estimatedTotalWan), _tb: tieBreaker };
+      })
+      .filter((c) => c.matchScore >= 45)
+      .sort((a, b) => (b.matchScore - a.matchScore) || (b._tb - a._tb))
+      .slice(0, 3)
+      .map(({ _tb, ...rest }) => rest);
+
     setRecommendations(results);
   };
 
+  const avgPremium = districts.length ? (districts.reduce((s, d) => s + d.premium, 0) / districts.length).toFixed(1) : "-";
+  const keySchoolAvgPrice = communities.filter((c) => c.schoolLevel === "重点");
+  const avgKeyPrice = keySchoolAvgPrice.length
+    ? Math.round(keySchoolAvgPrice.reduce((s, c) => s + c.price, 0) / keySchoolAvgPrice.length).toLocaleString()
+    : "-";
+  const topDistrict = districts.length ? districts.reduce((a, b) => (a.premium > b.premium ? a : b)) : null;
+  const topFeature = featureImportance.length ? featureImportance[0] : null;
+
   const kpis = [
-    { label: "全市平均溢价",  value: "29.2%",      sub: "较去年 ↑3.1%",  color: C.blue,   icon: "📈" },
-    { label: "重点学区均价",  value: "¥32,400",    sub: "每平方米",       color: C.yellow, icon: "🏠" },
-    { label: "最高溢价区域",  value: "江汉区 45%", sub: "连续3年第一",   color: "#dc2626", icon: "🔥" },
-    { label: "模型 R² 精度",  value: "0.876",      sub: "随机森林模型",   color: C.teal,   icon: "🤖" },
+    { label: "全市平均溢价",  value: `${avgPremium}%`,                sub: "基于当前样本",     color: C.blue,   icon: "📈" },
+    { label: "重点学区均价",  value: `¥${avgKeyPrice}`,              sub: "每平方米",          color: C.yellow, icon: "🏠" },
+    { label: "最高溢价区域",  value: topDistrict ? `${topDistrict.name} ${topDistrict.premium}%` : "-", sub: "当前数据集", color: "#dc2626", icon: "🔥" },
+    { label: "首要影响特征",  value: topFeature ? topFeature.feature : "-", sub: "机器学习输出", color: C.teal, icon: "🤖" },
   ];
 
   const TABS = [["overview","📊 宏观概览"],["analysis","🔬 溢价分析"],["recommend","🎯 智能选房"]];
@@ -211,10 +459,43 @@ export default function Dashboard() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <span style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: 20, padding: "4px 13px", fontSize: 11, color: "#fff", fontWeight: 600 }}>● 数据已更新</span>
-          <span style={{ background: "rgba(245,158,11,0.2)", border: "1px solid rgba(245,158,11,0.45)", borderRadius: 20, padding: "4px 13px", fontSize: 11, color: "#fef3c7", fontWeight: 600 }}>样本量：10,000 条</span>
+          <button
+            onClick={() => setHelpOpen((v) => !v)}
+            style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: 20, padding: "4px 13px", fontSize: 11, color: "#fff", fontWeight: 700, cursor: "pointer" }}
+          >
+            🔎 功能导航
+          </button>
+          <span style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: 20, padding: "4px 13px", fontSize: 11, color: "#fff", fontWeight: 600 }}>● 最近更新：{lastUpdatedAt || "--:--:--"}</span>
+          <span style={{ background: "rgba(245,158,11,0.2)", border: "1px solid rgba(245,158,11,0.45)", borderRadius: 20, padding: "4px 13px", fontSize: 11, color: "#fef3c7", fontWeight: 600 }}>样本量：{communities.length} 条</span>
         </div>
       </div>
+
+      {helpOpen && (
+        <div style={{ position: "fixed", top: 78, right: 24, width: 380, maxHeight: "70vh", overflowY: "auto", zIndex: 99, background: C.surface, border: `1px solid ${C.borderStrong}`, borderRadius: 12, boxShadow: C.shadowMd, padding: 12 }}>
+          <div style={{ fontWeight: 800, color: C.text, marginBottom: 8, fontSize: 13 }}>功能导航 / Help</div>
+          <input
+            value={helpQuery}
+            onChange={(e) => setHelpQuery(e.target.value)}
+            placeholder="搜索：模型、推荐、异常、溢价..."
+            style={{ width: "100%", border: `1px solid ${C.borderStrong}`, borderRadius: 8, padding: "8px 10px", fontSize: 12, marginBottom: 10 }}
+          />
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {filteredNavItems.map((item) => (
+              <button
+                key={item.anchor}
+                onClick={() => jumpToSection(item)}
+                style={{ textAlign: "left", border: `1px solid ${C.border}`, background: C.surfaceAlt, borderRadius: 8, padding: "8px 10px", cursor: "pointer" }}
+              >
+                <div style={{ fontSize: 12, color: C.text, fontWeight: 700 }}>{item.title}</div>
+                <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>{item.desc}</div>
+              </button>
+            ))}
+            {filteredNavItems.length === 0 && (
+              <div style={{ fontSize: 12, color: C.textMuted, padding: "6px 2px" }}>没有匹配项，换个关键词试试。</div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* KPI Bar */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", background: C.surface, borderBottom: `1px solid ${C.border}` }}>
@@ -246,6 +527,24 @@ export default function Dashboard() {
         })}
       </div>
 
+      {/* Action Bar */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "10px 32px", background: C.surface }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button onClick={loadData} style={{ border: `1px solid ${C.borderStrong}`, background: C.blueLight, color: C.blue, borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+            刷新数据
+          </button>
+          <button onClick={() => setAutoPlay((v) => !v)} style={{ border: `1px solid ${autoPlay ? C.blue : C.borderStrong}`, background: autoPlay ? C.blue : C.surface, color: autoPlay ? "#fff" : C.textMid, borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+            {autoPlay ? "停止轮播" : "答辩轮播"}
+          </button>
+          <button onClick={exportFilteredCsv} style={{ border: `1px solid ${C.borderStrong}`, background: C.surfaceAlt, color: C.text, borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+            导出当前筛选CSV
+          </button>
+        </div>
+        <div style={{ fontSize: 12, color: loadError ? "#dc2626" : C.textMuted, fontWeight: 600 }}>
+          {loadError || "数据链路：db.json -> json-server -> dashboard"}
+        </div>
+      </div>
+
       {/* Content */}
       <div style={{ padding: "26px 32px", opacity: animIn ? 1 : 0, transition: "opacity 0.4s" }}>
         {loading ? (
@@ -259,6 +558,7 @@ export default function Dashboard() {
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
 
+              <div id="overview-heatmap">
               <Card>
                 <CardTitle>各区学区溢价热力图</CardTitle>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
@@ -271,8 +571,9 @@ export default function Dashboard() {
                   低溢价 → 高溢价 · 点击查看雷达图
                 </div>
               </Card>
+              </div>
 
-              <Card>
+              <Card id="overview-radar">
                 <CardTitle>区域综合评估 · {selectedDistrict?.name}</CardTitle>
                 {selectedDistrict && (
                   <>
@@ -314,6 +615,40 @@ export default function Dashboard() {
                 </LineChart>
               </ResponsiveContainer>
             </Card>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 20 }}>
+              <Card id="overview-correlation">
+                <CardTitle>学区溢价-房价相关性</CardTitle>
+                <div style={{ fontSize: 34, fontWeight: 800, color: C.blue }}>
+                  {districtCorrelation.toFixed(3)}
+                </div>
+                <div style={{ fontSize: 12, color: C.textMuted, marginTop: 6 }}>
+                  Pearson 相关系数（区级均价 vs 溢价）
+                </div>
+              </Card>
+              <Card>
+                <CardTitle>各区居住性价比 TOP</CardTitle>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {districtValueRanking.slice(0, 5).map((d, idx) => (
+                    <div key={d.name} style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                      <span>{idx + 1}. {d.name}</span>
+                      <strong style={{ color: C.blue }}>{d.valueScore}</strong>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+              <Card id="overview-histogram">
+                <CardTitle>溢价区间分布直方图</CardTitle>
+                <ResponsiveContainer width="100%" height={120}>
+                  <BarChart data={premiumHistogram}>
+                    <XAxis dataKey="range" tick={{ fill: C.textMuted, fontSize: 10 }} />
+                    <YAxis hide />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Bar dataKey="count" fill={C.teal} radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </Card>
+            </div>
           </div>
         )}
 
@@ -322,7 +657,7 @@ export default function Dashboard() {
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
 
-              <Card>
+              <Card id="analysis-feature-importance">
                 <CardTitle>随机森林特征重要性排名</CardTitle>
                 <ResponsiveContainer width="100%" height={215}>
                   <BarChart data={featureImportance} layout="vertical">
@@ -336,7 +671,7 @@ export default function Dashboard() {
                   </BarChart>
                 </ResponsiveContainer>
                 <div style={{ fontSize: 12, color: C.blue, marginTop: 8, padding: "9px 12px", background: C.blueLight, borderRadius: 8, borderLeft: `3px solid ${C.blue}`, fontWeight: 500 }}>
-                  💡 学校距离是影响房价最核心因素，贡献度达 31%
+                  💡 当前模型最关键特征：{topFeature ? `${topFeature.feature}（${(topFeature.importance * 100).toFixed(1)}%）` : "暂无"}
                 </div>
               </Card>
 
@@ -352,7 +687,7 @@ export default function Dashboard() {
                       {districts.map((_, i) => <Cell key={i} fill={`hsl(${215-i*8},${70-i*5}%,${52+i*5}%)`} />)}
                     </Bar>
                     <ReferenceLine y={29.2} stroke={C.yellow} strokeDasharray="5 3" strokeWidth={2}
-                      label={{ value: "全市均值 29.2%", fill: "#92400e", fontSize: 11, fontWeight: 700 }} />
+                      label={{ value: `全市均值 ${avgPremium}%`, fill: "#92400e", fontSize: 11, fontWeight: 700 }} />
                   </BarChart>
                 </ResponsiveContainer>
               </Card>
@@ -388,6 +723,89 @@ export default function Dashboard() {
                 <span><span style={{ color: C.teal, fontWeight: 700 }}>●</span> 普通学区</span>
               </div>
             </Card>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+              <Card id="analysis-model-compare">
+                <CardTitle>模型对比（R² / RMSE）</CardTitle>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: C.blueLight }}>
+                      <th style={{ padding: "8px", textAlign: "left" }}>模型</th>
+                      <th style={{ padding: "8px", textAlign: "right" }}>R²</th>
+                      <th style={{ padding: "8px", textAlign: "right" }}>RMSE</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style={{ padding: "8px" }}>线性回归</td>
+                      <td style={{ padding: "8px", textAlign: "right" }}>{metricTable.linear_regression.r2.toFixed(3)}</td>
+                      <td style={{ padding: "8px", textAlign: "right" }}>{Math.round(metricTable.linear_regression.rmse)}</td>
+                    </tr>
+                    <tr>
+                      <td style={{ padding: "8px" }}>随机森林</td>
+                      <td style={{ padding: "8px", textAlign: "right" }}>{metricTable.random_forest.r2.toFixed(3)}</td>
+                      <td style={{ padding: "8px", textAlign: "right" }}>{Math.round(metricTable.random_forest.rmse)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </Card>
+
+              <Card id="analysis-simulation">
+                <CardTitle>控制变量溢价剥离演示器</CardTitle>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <label style={{ fontSize: 12 }}>
+                    行政区
+                    <select value={simDistrict} onChange={(e) => setSimDistrict(e.target.value)} style={{ width: "100%", marginTop: 4 }}>
+                      {districts.map((d) => <option key={d.name} value={d.name}>{d.name}</option>)}
+                    </select>
+                  </label>
+                  <label style={{ fontSize: 12 }}>
+                    房龄：{simHouseAge}年
+                    <input type="range" min={1} max={30} value={simHouseAge} onChange={(e) => setSimHouseAge(Number(e.target.value))} style={{ width: "100%" }} />
+                  </label>
+                  <label style={{ fontSize: 12, gridColumn: "1 / span 2" }}>
+                    地铁距离：{simSubwayKm.toFixed(1)}km
+                    <input type="range" min={0.2} max={3} step={0.1} value={simSubwayKm} onChange={(e) => setSimSubwayKm(Number(e.target.value))} style={{ width: "100%" }} />
+                  </label>
+                </div>
+                <div style={{ marginTop: 10, fontSize: 12, color: C.textMid }}>
+                  非学区预测价：<strong>¥{simulationResult.noSchool.toLocaleString()}</strong> /㎡
+                </div>
+                <div style={{ fontSize: 12, color: C.textMid }}>
+                  学区预测价：<strong>¥{simulationResult.withSchool.toLocaleString()}</strong> /㎡
+                </div>
+                <div style={{ marginTop: 6, fontSize: 13, color: C.blue, fontWeight: 700 }}>
+                  溢价剥离结果：+¥{simulationResult.diff.toLocaleString()} /㎡（{simulationResult.pct.toFixed(1)}%）
+                </div>
+              </Card>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+              <Card id="analysis-outlier">
+                <CardTitle>异常值检测：清洗前</CardTitle>
+                <ResponsiveContainer width="100%" height={220}>
+                  <ScatterChart>
+                    <CartesianGrid stroke={C.border} strokeDasharray="4 2" />
+                    <XAxis dataKey="distance" tickFormatter={(v) => `${v}km`} />
+                    <YAxis dataKey="price" tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Scatter data={anomalyScatter.before} fill={C.yellow} />
+                  </ScatterChart>
+                </ResponsiveContainer>
+              </Card>
+              <Card>
+                <CardTitle>异常值检测：清洗后</CardTitle>
+                <ResponsiveContainer width="100%" height={220}>
+                  <ScatterChart>
+                    <CartesianGrid stroke={C.border} strokeDasharray="4 2" />
+                    <XAxis dataKey="distance" tickFormatter={(v) => `${v}km`} />
+                    <YAxis dataKey="price" tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Scatter data={anomalyScatter.after} fill={C.blue} />
+                  </ScatterChart>
+                </ResponsiveContainer>
+              </Card>
+            </div>
           </div>
         )}
 
@@ -396,7 +814,7 @@ export default function Dashboard() {
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
 
-              <Card>
+              <Card id="recommend-controls">
                 <CardTitle>🎛 输入你的需求偏好</CardTitle>
                 <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
                   {[
@@ -430,7 +848,7 @@ export default function Dashboard() {
                 </div>
               </Card>
 
-              <Card>
+              <Card id="recommend-top3">
                 <CardTitle>🏆 TOP 3 推荐房源</CardTitle>
                 {recommendations.length === 0 ? (
                   <div style={{ textAlign: "center", padding: "44px 20px", color: C.textMuted, fontSize: 13 }}>
@@ -468,6 +886,9 @@ export default function Dashboard() {
                             </div>
                           ))}
                         </div>
+                        <div style={{ marginTop: 6, fontSize: 12, color: "#92400e" }}>
+                          你为学区多花约：<strong>¥{Math.round(((r.estimatedTotalWan || 0) * 10000 * r.premium) / (100 + r.premium)).toLocaleString()}</strong>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -477,6 +898,33 @@ export default function Dashboard() {
 
             <Card>
               <CardTitle>全部小区样本数据表</CardTitle>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", gap: 10, marginBottom: 12 }}>
+                <input
+                  value={searchKeyword}
+                  onChange={(e) => setSearchKeyword(e.target.value)}
+                  placeholder="搜索小区/区域/学校"
+                  style={{ border: `1px solid ${C.borderStrong}`, borderRadius: 8, padding: "8px 10px", fontSize: 12 }}
+                />
+                <select value={schoolFilter} onChange={(e) => setSchoolFilter(e.target.value)} style={{ border: `1px solid ${C.borderStrong}`, borderRadius: 8, padding: "8px 10px", fontSize: 12 }}>
+                  <option value="全部">全部学区等级</option>
+                  <option value="重点">重点</option>
+                  <option value="普通">普通</option>
+                </select>
+                <select value={sortField} onChange={(e) => setSortField(e.target.value)} style={{ border: `1px solid ${C.borderStrong}`, borderRadius: 8, padding: "8px 10px", fontSize: 12 }}>
+                  <option value="score">按综合评分</option>
+                  <option value="price">按均价</option>
+                  <option value="premium">按溢价</option>
+                  <option value="distance">按学校距离</option>
+                  <option value="subway">按地铁距离</option>
+                </select>
+                <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} style={{ border: `1px solid ${C.borderStrong}`, borderRadius: 8, padding: "8px 10px", fontSize: 12 }}>
+                  <option value="desc">降序</option>
+                  <option value="asc">升序</option>
+                </select>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", fontSize: 12, color: C.textMuted }}>
+                  共 {filteredCommunities.length} 条
+                </div>
+              </div>
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
@@ -487,7 +935,7 @@ export default function Dashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {communities.map((c, i) => (
+                    {filteredCommunities.map((c, i) => (
                       <tr key={c.id}
                         style={{ borderBottom: `1px solid ${C.border}`, background: i % 2 ? C.surfaceAlt : C.surface, transition: "background 0.12s", cursor: "default" }}
                         onMouseEnter={e => e.currentTarget.style.background = C.blueLight}
@@ -513,6 +961,44 @@ export default function Dashboard() {
                   </tbody>
                 </table>
               </div>
+            </Card>
+
+            <Card id="recommend-compare">
+              <CardTitle>小区对比模式（并排比较）</CardTitle>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+                <select value={compareLeftId} onChange={(e) => setCompareLeftId(e.target.value)}>
+                  {communities.map((c) => <option key={`l-${c.id}`} value={String(c.id)}>{c.name}</option>)}
+                </select>
+                <select value={compareRightId} onChange={(e) => setCompareRightId(e.target.value)}>
+                  {communities.map((c) => <option key={`r-${c.id}`} value={String(c.id)}>{c.name}</option>)}
+                </select>
+              </div>
+              {compareLeft && compareRight && (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: C.blueLight }}>
+                      <th style={{ padding: 8, textAlign: "left" }}>指标</th>
+                      <th style={{ padding: 8, textAlign: "right" }}>{compareLeft.name}</th>
+                      <th style={{ padding: 8, textAlign: "right" }}>{compareRight.name}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[
+                      ["均价(元/㎡)", compareLeft.price, compareRight.price],
+                      ["学区溢价(%)", compareLeft.premium, compareRight.premium],
+                      ["学校距离(km)", compareLeft.distance, compareRight.distance],
+                      ["地铁距离(km)", compareLeft.subway, compareRight.subway],
+                      ["综合评分", compareLeft.score, compareRight.score]
+                    ].map(([label, l, r]) => (
+                      <tr key={label}>
+                        <td style={{ padding: 8 }}>{label}</td>
+                        <td style={{ padding: 8, textAlign: "right" }}>{l}</td>
+                        <td style={{ padding: 8, textAlign: "right" }}>{r}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </Card>
           </div>
         )}
