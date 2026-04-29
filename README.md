@@ -1,6 +1,6 @@
 # school-house-dashboard
 
-学区房可视化看板（Vite + React + Recharts）。数据来源为 `db.json`（通过 `json-server` 提供接口），并提供 Python 脚本完成“特征宽表/特征重要性/学区溢价”的离线计算与回写。
+学区房可视化看板（Vite + React + Recharts）。数据来源为 `db.json`，由 FastAPI 后端加载进 SQLite，并通过与前端同名接口提供数据；Python 脚本完成“特征宽表/特征重要性/学区溢价”的离线计算与回写。
 
 ## 快速开始
 
@@ -11,28 +11,30 @@ npm install
 npm run dev
 ```
 
-### 2) 启动 Mock 接口
+### 2) 启动后端 API（替代 Mock）
+
+后端会把 `db.json` 落库到 SQLite，并提供：
+`/districts`、`/communities`、`/priceTrend`、`/featureImportance`、`/modelMetrics`。
 
 ```powershell
-json-server --watch db.json --port 3001
+py -3.10 -m pip install -r backend/requirements.txt
+py -3.10 -m uvicorn backend.main:app --host 0.0.0.0 --port 3001
 ```
 
 前端默认读取：`http://localhost:3001`
 
-### 3) 生成并回写模型结果（可选）
+### 3) 生成并回写模型结果（可选，推荐）
 
 依赖安装：
 
 ```powershell
-python -m pip install -r scripts/requirements.txt
+py -3.10 -m pip install -r scripts/requirements.txt
 ```
 
-依次运行（会产出 `artifacts/*` 并把 `featureImportance` 写回 `db.json`）：
+或者：调用后端重算并刷新 SQLite（推荐）：
 
 ```powershell
-python scripts/build_feature_table.py
-python scripts/train_model.py
-python scripts/update_db_feature_importance.py
+Invoke-RestMethod -Method Post -Uri "http://localhost:3001/refresh?recompute=true"
 ```
 
 ---
@@ -48,7 +50,7 @@ python scripts/update_db_feature_importance.py
 ### 2. 技术架构
 
 - **前端展示层**：`React + Recharts`，负责热力图、雷达图、趋势图、散点图、推荐与数据表。
-- **数据服务层**：`json-server`，将 `db.json` 暴露为 REST 接口。
+- **数据服务层**：`FastAPI`，将 `db.json` 加载进 SQLite，并提供与前端同名 REST 接口。
 - **数据处理层**：`pandas + scikit-learn + geopy`，完成清洗、特征工程、建模与溢价计算。
 
 ### 3. 当前功能
@@ -70,16 +72,6 @@ python scripts/update_db_feature_importance.py
 - `scripts/update_db_feature_importance.py`：回写 `featureImportance` 到 `db.json`。
 - `artifacts/*`：模型指标与中间产物。
 
-### 5. 协作与提交流程
-
-```powershell
-git add .
-git commit -m "feat: 描述本次改动"
-git push
-```
-
-建议：每次新增功能后，同步更新本 README 的“变更记录”。
-
 ---
 
 ## 变更记录
@@ -92,3 +84,8 @@ git push
 - 新增宏观指标：溢价-房价相关系数、居住性价比榜、溢价分布直方图。
 - 新增分析能力：模型对比表、控制变量溢价剥离演示器、异常值清洗前后散点对照。
 - 新增推荐增强：学区额外花费拆分说明与双小区并排对比模式。
+
+### 2026-04-29
+
+- 新增后端：FastAPI + SQLite，将 `db.json` 落库并提供与前端同名接口。
+- 新增刷新接口：`POST /refresh?recompute=false`（仅落库）与 `POST /refresh?recompute=true`（重跑建模并落库）。
