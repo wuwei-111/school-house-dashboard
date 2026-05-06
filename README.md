@@ -1,6 +1,8 @@
 # school-house-dashboard
 
-学区房可视化看板（Vite + React + Recharts）。数据来源为 `db.json`，由 FastAPI 后端加载进 SQLite，并通过与前端同名接口提供数据；Python 脚本完成“特征宽表/特征重要性/学区溢价”的离线计算与回写。
+学区房可视化看板（Vite + React + Recharts）。数据以 `db.json` 为真值，FastAPI 落库 SQLite 后提供与前端一致的 REST 接口；Python 脚本离线完成特征宽表、建模、特征重要性及溢价结果，并可经后端一键刷新回写。
+
+当前版本已贯通：**前端展示 → 后端接口 → 数据与可选重算管线**，本地按下方步骤即可完整运行。
 
 ## 快速开始
 
@@ -11,19 +13,18 @@ npm install
 npm run dev
 ```
 
-### 2) 启动后端 API（替代 Mock）
+### 2) 启动后端 API
 
-后端会把 `db.json` 落库到 SQLite，并提供：
-`/districts`、`/communities`、`/priceTrend`、`/featureImportance`、`/modelMetrics`。
+后端将 `db.json` 同步到 SQLite，并提供：`/districts`、`/communities`、`/priceTrend`、`/featureImportance`、`/modelMetrics`。
 
 ```powershell
 py -3.10 -m pip install -r backend/requirements.txt
 py -3.10 -m uvicorn backend.main:app --host 0.0.0.0 --port 3001
 ```
 
-前端默认读取：`http://localhost:3001`
+前端默认请求：`http://localhost:3001`
 
-### 3) 生成并回写模型结果（可选，推荐）
+### 3) 生成并回写模型结果（可选）
 
 依赖安装：
 
@@ -31,7 +32,7 @@ py -3.10 -m uvicorn backend.main:app --host 0.0.0.0 --port 3001
 py -3.10 -m pip install -r scripts/requirements.txt
 ```
 
-或者：调用后端重算并刷新 SQLite（推荐）：
+或在后端已启动时触发重算并落库：
 
 ```powershell
 Invoke-RestMethod -Method Post -Uri "http://localhost:3001/refresh?recompute=true"
@@ -39,53 +40,74 @@ Invoke-RestMethod -Method Post -Uri "http://localhost:3001/refresh?recompute=tru
 
 ---
 
-## 项目详细说明
+## 项目说明
 
-### 1. 项目目标
+### 目标
 
-- 基于城市房产与教育资源数据，分析学区房溢价结构。
-- 输出可视化看板与推荐结果，支持课程汇报展示。
-- 支持用 Python 离线建模，将特征重要性回写到前端数据源。
+- 基于城市房产与教育资源相关数据，分析学区房溢价结构并可视化。
+- 支持离线建模，将特征重要性等结果回写到数据源供看板读取。
 
-### 2. 技术架构
+### 技术架构
 
-- **前端展示层**：`React + Recharts`，负责热力图、雷达图、趋势图、散点图、推荐与数据表。
-- **数据服务层**：`FastAPI`，将 `db.json` 加载进 SQLite，并提供与前端同名 REST 接口。
-- **数据处理层**：`pandas + scikit-learn + geopy`，完成清洗、特征工程、建模与溢价计算。
+- **前端**：React + Recharts（热力、雷达、趋势、散点、推荐与表格等）。
+- **后端**：FastAPI + SQLite，读 `db.json` / `artifacts`，对外提供同名 JSON 接口。
+- **数据与建模**：pandas、scikit-learn、geopy；脚本见 `scripts/`。
 
-### 3. 当前功能
+### 功能概览
 
-- **宏观概览**：区域热力格 + 综合雷达 + 学区/非学区价格趋势。
-- **溢价分析**：特征重要性排名、区域溢价对比、学校距离与价格散点关系。
-- **智能推荐**：预算/通勤/学区偏好输入，输出 TOP3 匹配房源。
-- **实用工具**：
-  - 手动刷新数据；
-  - 答辩轮播模式（自动切换三大页签）；
-  - 样本搜索/筛选/排序；
-  - 导出当前筛选结果为 CSV。
+- **宏观概览**：区域热力、综合雷达、学区/非学区价格趋势。
+- **溢价分析**：特征重要性、区域溢价对比、学校距离与价格散点等。
+- **智能推荐**：按预算/通勤/学区偏好给出匹配房源。
+- **工具**：数据刷新、**演示用自动轮播**（切换主要页签）、搜索/筛选/排序、导出当前筛选为 CSV。
 
-### 4. 数据与脚本目录
+### 目录与数据流
 
-- `db.json`：前端直接消费的数据源。
-- `scripts/build_feature_table.py`：清洗 + 距离特征 + 宽表生成。
-- `scripts/train_model.py`：模型训练、评估、溢价测算。
-- `scripts/update_db_feature_importance.py`：回写 `featureImportance` 到 `db.json`。
-- `artifacts/*`：模型指标与中间产物。
+- `db.json`：业务与展示用主数据文件。
+- `scripts/build_feature_table.py`：清洗与宽表。
+- `scripts/train_model.py`：训练与指标、溢价摘要写入 `artifacts/`。
+- `scripts/update_db_feature_importance.py`：将特征重要性回写 `db.json`。
+- `artifacts/*`：模型指标与中间表（`recompute=true` 时会更新）。
 
 ---
 
-## 变更记录
+## 项目分工表
 
-### 2026-04-25
+本仓库四人组的**具体职责与负责边界**（字段或接口变更时，由数据负责人发起，其余角色确认后改代码）。
 
-- 新增数据处理与建模脚本链路：宽表构建、模型训练、溢价计算、特征回写。
-- 增强前端交互：搜索/筛选/排序、CSV 导出、数据刷新、答辩轮播模式。
-- KPI 与分析洞察改为基于实时数据计算，不再硬编码固定值。
-- 新增宏观指标：溢价-房价相关系数、居住性价比榜、溢价分布直方图。
-- 新增分析能力：模型对比表、控制变量溢价剥离演示器、异常值清洗前后散点对照。
-- 新增推荐增强：学区额外花费拆分说明与双小区并排对比模式。
+### 分工总览
 
-### 2026-04-29
 
-- 新增后端：FastAPI + SQLite，将 `db.json` 落库并提供与前端同名接口。
-- 新增刷新接口：`POST /refresh?recompute=false`（仅落库）与 `POST /refresh?recompute=true`（重跑建模并落库）。
+| 姓名      | 角色      | 负责范围（主要文件/目录）                                                                                                                                | 协作对象                                             |
+| ------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| **林知博** | 数据      | `db.json` 业务数据；字段口径与样本质量；字段说明文档（组内约定存放位置即可）                                                                                                  | 吕恺涛（建模入参列）、巫威（列表/图表所需列）                          |
+| **吕恺涛** | 算法 / 建模 | `scripts/build_feature_table.py`、`scripts/train_model.py`、`scripts/update_db_feature_importance.py`、`artifacts/*`、`scripts/requirements.txt` | 林知博（字段含义）、陈宇欣（`/refresh?recompute=true` 调用的脚本顺序） |
+| **陈宇欣** | 后端      | `backend/main.py`、`backend/db.py`、`backend/requirements.txt`；README 中与端口、启动方式相关说明                                                            | 吕恺涛（脚本产物路径）、巫威（`API_BASE_URL` 与 3001 端口）         |
+| **巫威**  | 前端      | `src/`（含 `App.jsx` 等）、`package.json` 侧依赖与联调配置                                                                                                | 陈宇欣（接口基址与可用性）、林知博（枚举与筛选维度）                       |
+
+
+### 接口与主责对照
+
+
+| 方法   | 路径                         | 说明                   | 实现 / 数据主责                           |
+| ---- | -------------------------- | -------------------- | ----------------------------------- |
+| GET  | `/districts`               | 区维度                  | 陈宇欣；数据结构对齐林知博                       |
+| GET  | `/communities`             | 小区列表                 | 陈宇欣；林知博                             |
+| GET  | `/priceTrend`              | 价格走势                 | 陈宇欣；林知博                             |
+| GET  | `/featureImportance`       | 特征重要性                | 陈宇欣读库；吕恺涛回写 `db.json` 后需 refresh    |
+| GET  | `/modelMetrics`            | 模型指标                 | 陈宇欣读 `artifacts/model_metrics.json` |
+| POST | `/refresh?recompute=false` | 仅 `db.json` → SQLite | 陈宇欣                                 |
+| POST | `/refresh?recompute=true`  | 跑建模脚本链再落库            | 陈宇欣 + 吕恺涛（脚本）                       |
+
+
+### 协作约定
+
+- **林知博** 维护 `id`、`name` 等主键与业务字段一致性；`featureImportance` 条目由吕恺涛管线生成后回写。
+- **吕恺涛** 保证三条脚本在项目根目录可执行，产出与 `train_model.py` 中路径一致。
+- **陈宇欣** 保证 `recompute=false` / `recompute=true` 行为与 README 描述一致；组内统一 Python 版本与 API 端口（默认 **3001**）。
+- **巫威** 所有请求走可配置的 `**API_BASE_URL`**（默认 `http://localhost:3001`），空数据与请求失败时提示文案与数据/后端对齐。
+
+### 说明
+
+- `**featureImportance` 数值**：吕恺涛生成并写回 `db.json` → 陈宇欣刷新后进库 → 巫威仅展示。
+- **全员**：至少应能本地启动前端与后端，便于联调与演示环境一致。
+
